@@ -1,7 +1,11 @@
 from decimal import Decimal
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 
 from typing_extensions import override
+
+from aiovantage import logger
+from aiovantage.command_client import Converter
+from aiovantage.errors import CommandError, ConversionError
 
 from .base import Interface, method
 
@@ -30,8 +34,20 @@ class ButtonInterface(Interface):
         NormallyOpen = 0
         NormallyClosed = 1
 
+    class BlinkRate(StrEnum):
+        """LED blink rate (firmware 3.9.x terminal command)."""
+
+        Fast = "FAST"
+        Medium = "MEDIUM"
+        Slow = "SLOW"
+        VerySlow = "VERYSLOW"
+        Off = "OFF"
+
     # Properties
     state: State | None = State.Up
+    led_active_color: tuple[int, int, int] | None = None
+    led_inactive_color: tuple[int, int, int] | None = None
+    led_blink_rate: "ButtonInterface.BlinkRate | None" = None
 
     # Methods
     @method("GetState", "GetStateHW", property="state")
@@ -172,6 +188,47 @@ class ButtonInterface(Interface):
             "Button.SetPlacementSW" if sw else "Button.SetPlacement", placement
         )
 
+    # LED control (firmware 3.9.x terminal command, not an INVOKE method)
+    async def set_led(
+        self,
+        active: tuple[int, int, int],
+        inactive: tuple[int, int, int] = (0, 0, 0),
+        blink_rate: "ButtonInterface.BlinkRate" = BlinkRate.Off,
+    ) -> None:
+        """Set the button LED colors and blink rate.
+
+        Uses the firmware 3.9.x terminal command:
+            LED <vid> <R1> <G1> <B1> <R2> <G2> <B2> <BlinkRate>
+
+        Args:
+            active: RGB tuple for the active (On) state.
+            inactive: RGB tuple for the inactive (Off) state.
+            blink_rate: Blink rate (FAST/MEDIUM/SLOW/VERYSLOW/OFF).
+        """
+        # LED <vid> <R1> <G1> <B1> <R2> <G2> <B2> <BlinkRate>
+        if not self.command_client:
+            raise ValueError("The object has no command client to send requests with.")
+        r1, g1, b1 = active
+        r2, g2, b2 = inactive
+        await self.command_client.raw_request(
+            f"LED {self.vid} {r1} {g1} {b1} {r2} {g2} {b2} {blink_rate}"
+        )
+        self.update_properties(
+            {
+                "led_active_color": active,
+                "led_inactive_color": inactive,
+                "led_blink_rate": blink_rate,
+            }
+        )
+
+    async def clear_led(self) -> None:
+        """Reset the button LED to off (master clear).
+
+        Sends all-zero colors with blink OFF, which clears any logical fault
+        or task conflict indicated by red flashing.
+        """
+        await self.set_led((0, 0, 0), (0, 0, 0), self.BlinkRate.Off)
+
     # Convenience functions, not part of the interface
     async def press(self) -> None:
         """Press a button."""
@@ -192,6 +249,35 @@ class ButtonInterface(Interface):
         return self.state == self.State.Down
 
     @override
+    async def fetch_state(self) -> list[str]:
+        # Fetch button state via standard property getters (e.g. GetState)
+        changed = await super().fetch_state()
+
+        # Fetch LED state via the GETLED raw command
+        # GETLED <vid>
+        # -> R:GETLED <vid> <state(0/1)> <R1> <G1> <B1> <R2> <G2> <B2> <BlinkRate>
+        if not self.command_client:
+            return changed
+
+        try:
+            response = await self.command_client.raw_request(f"GETLED {self.vid}")
+            _, _vid, _state, r1, g1, b1, r2, g2, b2, blink_str = Converter.tokenize(
+                response[-1]
+            )
+            led_changed = self.update_properties(
+                {
+                    "led_active_color": (int(r1), int(g1), int(b1)),
+                    "led_inactive_color": (int(r2), int(g2), int(b2)),
+                    "led_blink_rate": ButtonInterface.BlinkRate(blink_str),
+                }
+            )
+            changed.extend(led_changed)
+        except (CommandError, ConversionError, ValueError) as ex:
+            logger.warning("Failed to fetch LED state for vid %d: %s", self.vid, ex)
+
+        return changed
+
+    @override
     def handle_category_status(self, category: str, *args: str) -> list[str]:
         if category == "BTN":
             # STATUS BTN
@@ -202,5 +288,17 @@ class ButtonInterface(Interface):
             }
 
             return self.update_properties({"state": btn_map[args[0]]})
+
+        if category == "LED":
+            # STATUS LED
+            # -> S:LED <id> <state(0=inactive/1=active)> <R1> <G1> <B1> <R2> <G2> <B2> <BlinkRate>
+            _state, r1, g1, b1, r2, g2, b2, blink_str = args[:8]
+            return self.update_properties(
+                {
+                    "led_active_color": (int(r1), int(g1), int(b1)),
+                    "led_inactive_color": (int(r2), int(g2), int(b2)),
+                    "led_blink_rate": ButtonInterface.BlinkRate(blink_str),
+                }
+            )
 
         return super().handle_category_status(category, *args)
