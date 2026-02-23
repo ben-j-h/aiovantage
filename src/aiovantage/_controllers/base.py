@@ -74,6 +74,24 @@ class Controller(QuerySet[T], EventDispatcher):
         """Return the type of status event that the controller is monitoring."""
         return self._status_type
 
+    def inject(self, obj: T) -> None:
+        """Inject a pre-parsed object directly into this controller.
+
+        Used when loading objects from a local config file instead of fetching
+        them live from IConfiguration.  Marks the controller as initialized so
+        that the IConfiguration discovery phase is skipped on the next call to
+        :meth:`initialize`.
+
+        The command client is attached to the object so it can issue commands
+        as soon as the command connection is established.
+
+        Args:
+            obj: The pre-parsed Vantage object to add to this controller.
+        """
+        obj.command_client = self._vantage.command_client
+        self._objects[obj.vid] = obj
+        self._initialized = True
+
     async def initialize(
         self, *, fetch_state: bool = True, enable_state_monitoring: bool = True
     ) -> None:
@@ -83,58 +101,60 @@ class Controller(QuerySet[T], EventDispatcher):
             fetch_state: Whether to fetch the state properties of objects.
             enable_state_monitoring: Whether to monitor for state changes on objects.
         """
-        # Prevent concurrent controller initialization from multiple tasks, since we
-        # are batch-modifying the _items dict.
-        async with self._lock:
-            prev_ids = set(self._objects.keys())
-            cur_ids: set[int] = set()
-
-            # Fetch all objects managed by this controller
-            async for obj in ConfigurationInterface.get_objects(
-                self._vantage.config_client, *self.vantage_types, as_type=SystemObject
-            ):
-                obj = cast(T, obj)
-
-                if obj.vid in prev_ids:
-                    # This is an existing object.
-                    existing_obj = self._objects[obj.vid]
-
-                    # Check if any attributes have changed and update them
-                    attrs_changed: list[str] = []
-                    for f in fields(type(obj)):
-                        if hasattr(existing_obj, f.name):
-                            new_value = getattr(obj, f.name)
-                            if getattr(existing_obj, f.name) != new_value:
-                                setattr(existing_obj, f.name, new_value)
-                                attrs_changed.append(f.name)
-
-                    # Notify subscribers if any attributes changed
-                    if attrs_changed:
-                        self.emit(ObjectUpdated(existing_obj, attrs_changed))
-                else:
-                    # This is a new object.
-
-                    # Attach the command client to the object
-                    obj.command_client = self._vantage.command_client
-
-                    # Add it to the controller and notify subscribers
-                    self._objects[obj.vid] = obj
-                    self.emit(ObjectAdded(obj))
-
-                # Keep track of which objects we've seen
-                cur_ids.add(obj.vid)
-
-            # Handle objects that were removed
-            for vid in prev_ids - cur_ids:
-                obj = self._objects.pop(vid)
-                self.emit(ObjectDeleted(obj))
-
-        logger.info(
-            "%s populated (%d objects)", type(self).__name__, len(self._objects)
-        )
-
-        # Mark the controller as initialized
+        # When objects have been pre-loaded via inject() (e.g. from a local config
+        # file), skip the IConfiguration discovery phase entirely.  State fetching
+        # and monitoring still proceed as normal so real-time updates work.
         if not self._initialized:
+            # Prevent concurrent controller initialization from multiple tasks, since
+            # we are batch-modifying the _items dict.
+            async with self._lock:
+                prev_ids = set(self._objects.keys())
+                cur_ids: set[int] = set()
+
+                # Fetch all objects managed by this controller
+                async for obj in ConfigurationInterface.get_objects(
+                    self._vantage.config_client, *self.vantage_types, as_type=SystemObject
+                ):
+                    obj = cast(T, obj)
+
+                    if obj.vid in prev_ids:
+                        # This is an existing object.
+                        existing_obj = self._objects[obj.vid]
+
+                        # Check if any attributes have changed and update them
+                        attrs_changed: list[str] = []
+                        for f in fields(type(obj)):
+                            if hasattr(existing_obj, f.name):
+                                new_value = getattr(obj, f.name)
+                                if getattr(existing_obj, f.name) != new_value:
+                                    setattr(existing_obj, f.name, new_value)
+                                    attrs_changed.append(f.name)
+
+                        # Notify subscribers if any attributes changed
+                        if attrs_changed:
+                            self.emit(ObjectUpdated(existing_obj, attrs_changed))
+                    else:
+                        # This is a new object.
+
+                        # Attach the command client to the object
+                        obj.command_client = self._vantage.command_client
+
+                        # Add it to the controller and notify subscribers
+                        self._objects[obj.vid] = obj
+                        self.emit(ObjectAdded(obj))
+
+                    # Keep track of which objects we've seen
+                    cur_ids.add(obj.vid)
+
+                # Handle objects that were removed
+                for vid in prev_ids - cur_ids:
+                    obj = self._objects.pop(vid)
+                    self.emit(ObjectDeleted(obj))
+
+            logger.info(
+                "%s populated (%d objects)", type(self).__name__, len(self._objects)
+            )
+
             self._initialized = True
 
         # Fetch state and subscribe to state changes if requested
