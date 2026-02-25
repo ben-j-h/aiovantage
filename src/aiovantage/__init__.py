@@ -349,6 +349,14 @@ class Vantage:
                 controller.inject(obj)
                 count += 1
 
+        # Mark every controller as initialized, including those that received no
+        # objects from the file.  This prevents controllers whose object types are
+        # absent from the file (e.g. ThermostatsController on a system where
+        # thermostats were intentionally removed) from falling through to the live
+        # IConfiguration fetch and re-introducing objects we want to suppress.
+        for controller in self._controllers:
+            controller._initialized = True  # noqa: SLF001
+
         logger.info("Loaded %d objects from local config file %s", count, self._local_config_file)
 
     async def initialize(
