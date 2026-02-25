@@ -1,6 +1,7 @@
 """Asynchronous Python library for controlling Vantage InFusion controllers."""
 
 import asyncio
+import datetime as dt
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from ssl import SSLContext
@@ -319,6 +320,23 @@ class Vantage:
         except KeyError:
             return None
 
+    async def set_datetime(self, when: dt.datetime) -> None:
+        """Sync the controller clock to the given datetime.
+
+        Sends ``SetDate`` and ``SetTime`` via the IConfiguration (ACI) interface.
+        The controller interprets the values as local wall-clock time, so ``when``
+        should be in the same timezone as the Vantage system.
+
+        Args:
+            when: The datetime to set on the controller.
+        """
+        from aiovantage._config_client.interfaces.configuration import (
+            ConfigurationInterface as AciConfiguration,
+        )
+
+        await AciConfiguration.set_date(self._config_client, when.year, when.month, when.day)
+        await AciConfiguration.set_time(self._config_client, when.hour, when.minute, when.second)
+
     def close(self) -> None:
         """Close all client connections."""
         self.config_client.close()
@@ -333,7 +351,7 @@ class Vantage:
         those controllers have ``_initialized = True`` and will skip the live
         IConfiguration fetch in :meth:`Controller.initialize`.
         """
-        from aiovantage._config_client.file_loader import iter_objects
+        from aiovantage._config_client.file_loader import iter_controller_ips, iter_objects
 
         # Build a mapping from Vantage type name → controller so we can route
         # each parsed object to the right place.
@@ -356,6 +374,15 @@ class Vantage:
         # IConfiguration fetch and re-introducing objects we want to suppress.
         for controller in self._controllers:
             controller._initialized = True  # noqa: SLF001
+
+        # Patch each Master object with network info from ProjectInfo.
+        # The <Controller{VID}Info> elements are the only place in the config
+        # file that record per-controller IP, MAC, and firmware version.
+        for vid, ip, mac, fw in iter_controller_ips(self._local_config_file):  # type: ignore[arg-type]
+            if (master := self._masters.get(vid)) is not None:
+                master.ip_address = ip
+                master.mac_address = mac
+                master.firmware_version = fw
 
         logger.info("Loaded %d objects from local config file %s", count, self._local_config_file)
 

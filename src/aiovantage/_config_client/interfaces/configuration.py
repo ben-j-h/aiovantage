@@ -141,6 +141,42 @@ class ConfigurationInterface:
         """
         return await client.rpc(IConfiguration, GetObject, list(vids))
 
+    @staticmethod
+    async def set_time(client: ConfigClient, hour: int, minute: int, second: int) -> None:
+        """Set the system time on the Vantage controller.
+
+        Args:
+            client: A config client instance.
+            hour: The hour (0-23).
+            minute: The minute (0-59).
+            second: The second (0-59).
+        """
+        # <IConfiguration><SetTime><Hour>H</Hour><Minute>M</Minute><Second>S</Second></SetTime></IConfiguration>
+        await client.raw_request(
+            f"<IConfiguration><SetTime>"
+            f"<Hour>{hour}</Hour><Minute>{minute}</Minute><Second>{second}</Second>"
+            f"</SetTime></IConfiguration>",
+            "</IConfiguration>",
+        )
+
+    @staticmethod
+    async def set_date(client: ConfigClient, year: int, month: int, day: int) -> None:
+        """Set the system date on the Vantage controller.
+
+        Args:
+            client: A config client instance.
+            year: The year (e.g. 2026).
+            month: The month (1-12).
+            day: The day (1-31).
+        """
+        # <IConfiguration><SetDate><Year>Y</Year><Month>M</Month><Day>D</Day></SetDate></IConfiguration>
+        await client.raw_request(
+            f"<IConfiguration><SetDate>"
+            f"<Year>{year}</Year><Month>{month}</Month><Day>{day}</Day>"
+            f"</SetDate></IConfiguration>",
+            "</IConfiguration>",
+        )
+
     # Convenience functions, not part of the interface
     @overload
     @staticmethod

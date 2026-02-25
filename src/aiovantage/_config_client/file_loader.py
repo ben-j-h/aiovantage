@@ -90,6 +90,45 @@ def _make_parser() -> XmlParser:
     )
 
 
+def iter_controller_ips(
+    path: str | Path,
+) -> Iterator[tuple[int, str | None, str | None, str | None]]:
+    """Yield (vid, ip_address, mac_address, firmware_version) tuples from ProjectInfo.
+
+    The ProjectInfo section of a Design Center backup XML contains
+    ``<Controller{VID}Info>`` elements that record per-controller network
+    information.  This data is not available in the main ``<Objects>`` section.
+
+    Args:
+        path: Path to the Design Center backup XML file.
+
+    Yields:
+        ``(vid, ip_address, mac_address, firmware_version)`` tuples.
+        Any field that is absent in the XML is yielded as ``None``.
+    """
+    tree = ElementTree.parse(path)
+    root = tree.getroot()
+
+    project_info = root.find("ProjectInfo")
+    if project_info is None:
+        return
+
+    def _text(elem: ElementTree.Element, tag: str) -> str | None:
+        child = elem.find(tag)
+        return child.text.strip() if child is not None and child.text and child.text.strip() else None
+
+    for elem in project_info:
+        # Tags have the form Controller{VID}Info, e.g. Controller1Info, Controller2466Info
+        if not (elem.tag.startswith("Controller") and elem.tag.endswith("Info")):
+            continue
+        vid_str = elem.tag[len("Controller") : -len("Info")]
+        try:
+            vid = int(vid_str)
+        except ValueError:
+            continue
+        yield vid, _text(elem, "IPAddress"), _text(elem, "MACAddress"), _text(elem, "Firmware")
+
+
 def iter_objects(path: str | Path) -> Iterator[SystemObject]:
     """Yield all parseable SystemObject instances from a Design Center backup XML file.
 

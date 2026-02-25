@@ -32,3 +32,8 @@ class Master(SystemObject, IntrospectionInterface, ConfigurationInterface):
     module_count: int | None = None
     power_supply: int | None = None
     serial_number: int | None = None
+
+    # Not parsed from XML; populated externally (e.g. from ProjectInfo in the local config file).
+    ip_address: str | None = None
+    mac_address: str | None = None
+    firmware_version: str | None = None
