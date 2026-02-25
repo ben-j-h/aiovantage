@@ -35,6 +35,7 @@ from ._controllers.blind_groups import BlindGroupsController, BlindGroupTypes
 from ._controllers.blinds import BlindsController, BlindTypes
 from ._controllers.buttons import ButtonsController
 from ._controllers.dry_contacts import DryContactsController
+from ._controllers.enclosures import EnclosuresController
 from ._controllers.gmem import GMemController
 from ._controllers.light_sensors import LightSensorsController
 from ._controllers.load_groups import LoadGroupsController
@@ -62,6 +63,7 @@ __all__ = [
     "BlindTypes",
     "ButtonsController",
     "DryContactsController",
+    "EnclosuresController",
     "GMemController",
     "LightSensorsController",
     "LoadGroupsController",

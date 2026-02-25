@@ -21,6 +21,7 @@ from .controllers import (
     ButtonsController,
     Controller,
     DryContactsController,
+    EnclosuresController,
     GMemController,
     LightSensorsController,
     LoadGroupsController,
@@ -127,6 +128,7 @@ class Vantage:
         self._blinds = add_controller(BlindsController)
         self._buttons = add_controller(ButtonsController)
         self._dry_contacts = add_controller(DryContactsController)
+        self._enclosures = add_controller(EnclosuresController)
         self._gmem = add_controller(GMemController)
         self._light_sensors = add_controller(LightSensorsController)
         self._load_groups = add_controller(LoadGroupsController)
@@ -227,6 +229,11 @@ class Vantage:
     def dry_contacts(self) -> DryContactsController:
         """Controller for interacting with dry contacts."""
         return self._dry_contacts
+
+    @property
+    def enclosures(self) -> EnclosuresController:
+        """Controller for interacting with module enclosures (rack cabinets)."""
+        return self._enclosures
 
     @property
     def gmem(self) -> GMemController:
