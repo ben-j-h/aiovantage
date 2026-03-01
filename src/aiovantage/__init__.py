@@ -352,6 +352,7 @@ class Vantage:
         IConfiguration fetch in :meth:`Controller.initialize`.
         """
         from aiovantage._config_client.file_loader import iter_controller_ips, iter_objects
+        from aiovantage.objects import Task
 
         # Build a mapping from Vantage type name → controller so we can route
         # each parsed object to the right place.
@@ -362,6 +363,8 @@ class Vantage:
 
         count = 0
         for obj in iter_objects(self._local_config_file):  # type: ignore[arg-type]
+            if isinstance(obj, Task):
+                continue  # Tasks from the config file may not exist on the live controller.
             controller = type_to_controller.get(obj.vantage_type())
             if controller is not None:
                 controller.inject(obj)

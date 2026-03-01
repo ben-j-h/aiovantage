@@ -12,7 +12,7 @@ from typing import (
 
 from aiovantage import logger
 from aiovantage.command_client import CommandClient, Converter
-from aiovantage.errors import CommandError, ConversionError
+from aiovantage.errors import CommandError, ConversionError, InvalidObjectError
 
 T = TypeVar("T")
 
@@ -216,6 +216,14 @@ class Interface(metaclass=_InterfaceMeta):
         for prop, getter in self._property_getters.items():
             try:
                 fetched_properties[prop] = await getter(self)
+            except InvalidObjectError:
+                logger.debug(
+                    "Skipping fetch of property %s from %s (vid %d): object not present on controller",
+                    prop,
+                    self.interface_name,
+                    self.vid,
+                )
+                continue
             except (CommandError, ConversionError) as ex:
                 logger.warning(
                     "Failed to fetch property %s from %s (vid %d): %s",
