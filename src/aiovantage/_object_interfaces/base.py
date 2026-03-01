@@ -218,9 +218,10 @@ class Interface(metaclass=_InterfaceMeta):
                 fetched_properties[prop] = await getter(self)
             except (CommandError, ConversionError) as ex:
                 logger.warning(
-                    "Failed to fetch property %s from %s: %s",
+                    "Failed to fetch property %s from %s (vid %d): %s",
                     prop,
                     self.interface_name,
+                    self.vid,
                     ex,
                 )
                 continue
