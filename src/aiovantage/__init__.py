@@ -403,7 +403,8 @@ class Vantage:
             enable_state_monitoring: Whether to monitor for state changes on objects.
         """
         if self._local_config_file is not None and self._local_config_file.is_file():
-            self._inject_from_file()
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._inject_from_file)
 
         await asyncio.gather(
             *[

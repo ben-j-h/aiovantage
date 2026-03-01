@@ -256,7 +256,9 @@ class ButtonInterface(Interface):
         # Fetch LED state via the GETLED raw command
         # GETLED <vid>
         # -> R:GETLED <vid> <state(0/1)> <R1> <G1> <B1> <R2> <G2> <B2> <BlinkRate>
-        if not self.command_client:
+        # Only Button objects have LED hardware (they have a led_style field);
+        # DryContact objects inherit ButtonInterface but have no LED capability.
+        if not self.command_client or not hasattr(self, "led_style"):
             return changed
 
         try:
