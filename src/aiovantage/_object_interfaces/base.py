@@ -183,7 +183,10 @@ class Interface(metaclass=_InterfaceMeta):
 
         # Break the response into tokens
         return_line = response[-1]
-        _command, _vid, result, _method, *args = Converter.tokenize(return_line)
+        tokens = Converter.tokenize(return_line)
+        if len(tokens) < 4:
+            raise CommandError(f"Unexpected response format: {return_line!r}")
+        _command, _vid, result, _method, *args = tokens
 
         # Parse the response
         return self._parse_object_response(method, result, *args, as_type=as_type)
