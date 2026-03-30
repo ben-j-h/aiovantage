@@ -184,9 +184,15 @@ class Interface(metaclass=_InterfaceMeta):
         # Break the response into tokens
         return_line = response[-1]
         tokens = Converter.tokenize(return_line)
-        if len(tokens) < 4:
+        if len(tokens) >= 4:
+            _command, _vid, result, _method, *args = tokens
+        elif len(tokens) == 3:
+            # Legacy firmware responds with R:LOAD <vid> <level> or R:GETLOAD <vid> <level>
+            # instead of the standard R:INVOKE <vid> <result> <method> [args...]
+            _command, _vid, result = tokens
+            args = []
+        else:
             raise CommandError(f"Unexpected response format: {return_line!r}")
-        _command, _vid, result, _method, *args = tokens
 
         # Parse the response
         return self._parse_object_response(method, result, *args, as_type=as_type)
