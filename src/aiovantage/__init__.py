@@ -67,6 +67,7 @@ class Vantage:
         config_port: int | None = None,
         command_port: int | None = None,
         local_config_file: str | Path | None = None,
+        local_config_file_required: bool = False,
     ) -> None:
         """Initialize the Vantage instance.
 
@@ -84,10 +85,15 @@ class Vantage:
                 real-time state updates and commands.  This is useful for preserving
                 objects that were deleted from Design Center but whose hardware is still
                 present (phantom loads).
+            local_config_file_required: When True and ``local_config_file`` is set,
+                raise ``FileNotFoundError`` if the file does not exist instead of
+                falling back to live discovery.  Has no effect when
+                ``local_config_file`` is None.
         """
         # Set up clients
         self._host = host
         self._local_config_file = Path(local_config_file) if local_config_file else None
+        self._local_config_file_required = local_config_file_required
         self._config_client = ConfigClient(
             host,
             username,
@@ -405,9 +411,15 @@ class Vantage:
             fetch_state: Whether to fetch the state properties of objects.
             enable_state_monitoring: Whether to monitor for state changes on objects.
         """
-        if self._local_config_file is not None and self._local_config_file.is_file():
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._inject_from_file)
+        if self._local_config_file is not None:
+            if self._local_config_file.is_file():
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self._inject_from_file)
+            elif self._local_config_file_required:
+                raise FileNotFoundError(
+                    f"Local config file '{self._local_config_file}' not found. "
+                    "Restore the file or disable 'Use local config file only' in integration options."
+                )
 
         await asyncio.gather(
             *[
