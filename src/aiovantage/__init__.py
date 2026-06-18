@@ -393,7 +393,7 @@ class Vantage:
                 master.mac_address = mac
                 master.firmware_version = fw
 
-        logger.info("Loaded %d objects from local config file %s", count, self._local_config_file)
+        logger.warning("Loaded %d objects from local config file %s", count, self._local_config_file)
 
     async def initialize(
         self, *, fetch_state: bool = True, enable_state_monitoring: bool = True
@@ -413,6 +413,12 @@ class Vantage:
         """
         if self._local_config_file is not None:
             if self._local_config_file.is_file():
+                # Pre-mark every controller as initialized before the executor starts.
+                # This closes the race window where a concurrent lazy-initialize could
+                # open the config client (port 2001) while the XML file is being parsed
+                # in the thread pool.  Objects are injected by _inject_from_file itself.
+                for controller in self._controllers:
+                    controller._initialized = True  # noqa: SLF001
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._inject_from_file)
             elif self._local_config_file_required:
