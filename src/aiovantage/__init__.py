@@ -151,6 +151,14 @@ class Vantage:
         self._temperatures = add_controller(TemperaturesController)
         self._thermostats = add_controller(ThermostatsController)
 
+        # If the local config file already exists on disk, pre-mark every controller
+        # as initialized right now.  This closes the window between __init__ and the
+        # first call to initialize() during which a concurrent lazy-initialize could
+        # open the config client (port 2001).
+        if self._local_config_file is not None and self._local_config_file.is_file():
+            for controller in self._controllers:
+                controller._initialized = True  # noqa: SLF001
+
     def __getitem__(self, vid: int) -> SystemObject:
         """Return the object with the given Vantage ID."""
         for controller in self._controllers:
