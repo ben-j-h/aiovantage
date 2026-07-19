@@ -26,5 +26,6 @@ class StationsController(Controller[StationObject]):
         "RS232Station",
         "RS485Station",
         "ScenePointRelay",
+        "TPT",
         "Vantage.DmxDaliGateway",
     )

@@ -29,8 +29,8 @@ from ._objects.din_low_voltage_relay_station import DINLowVoltageRelayStation
 from ._objects.din_station import DINStation
 from ._objects.dry_contact import DryContact
 from ._objects.dual_relay_station import DualRelayStation
-from ._objects.eq_ctrl import EqCtrl
 from ._objects.enclosure import Enclosure
+from ._objects.eq_ctrl import EqCtrl
 from ._objects.eq_ux import EqUX
 from ._objects.gmem import GMem
 from ._objects.high_voltage_relay_station import HighVoltageRelayStation
@@ -72,6 +72,7 @@ from ._objects.system_object import SystemObject
 from ._objects.task import Task
 from ._objects.temperature import Temperature
 from ._objects.thermostat import Thermostat
+from ._objects.tpt import TPT
 from ._objects.types import Parent
 from ._objects.vantage_ddg_color_load import VantageDDGColorLoad
 from ._objects.vantage_dg_color_load import VantageDGColorLoad
@@ -148,6 +149,7 @@ __all__ = [
     "Task",
     "Temperature",
     "Thermostat",
+    "TPT",
     "VantageDDGColorLoad",
     "VantageDGColorLoad",
     "VantageDmxDaliGateway",
