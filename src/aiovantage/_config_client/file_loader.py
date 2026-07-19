@@ -32,13 +32,15 @@ from collections.abc import Iterator
 from pathlib import Path
 from xml.etree import ElementTree
 
-import aiovantage.objects as _obj_module
-from aiovantage.objects import SystemObject
 from xsdata.formats.dataclass.context import XmlContext
 from xsdata.formats.dataclass.parsers import XmlParser
 from xsdata.formats.dataclass.parsers.config import ParserConfig
 from xsdata.formats.dataclass.parsers.handlers import XmlEventHandler
 from xsdata.utils.text import pascal_case
+
+import aiovantage.objects as _obj_module
+from aiovantage._logger import logger
+from aiovantage.objects import SystemObject
 
 
 def _pascal_case_preserve(name: str) -> str:
@@ -174,7 +176,19 @@ def iter_objects(path: str | Path) -> Iterator[SystemObject]:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 obj = parser.from_string(xml_str, cls)
-        except Exception:
-            continue  # Skip objects that fail to parse (corrupt / truncated file).
+        except Exception as ex:
+            # Skip objects that fail to parse (corrupt / truncated file, or a
+            # required field with no default hitting an element Design Center
+            # omitted entirely) -- but log it. A silently-dropped object here
+            # previously meant a third of a house's buttons vanishing with zero
+            # trace anywhere.
+            vid = typed_elem.get("VID", "?")
+            logger.warning(
+                "Skipping unparseable %s (VID=%s) from local config file: %s",
+                type_name,
+                vid,
+                ex,
+            )
+            continue
 
         yield obj
