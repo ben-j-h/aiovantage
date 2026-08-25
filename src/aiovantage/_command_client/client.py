@@ -123,7 +123,7 @@ class CommandClient:
         # Parse the response
         return CommandResponse(command[2:], args, data)
 
-    async def raw_request(self, request: str) -> list[str]:
+    async def raw_request(self, request: str, *, expect_vid: str | None = None) -> list[str]:
         """Send a raw command to the Host Command service and return all response lines.
 
         Handles authentication if required, and raises an exception if the response line
@@ -131,6 +131,17 @@ class CommandClient:
 
         Args:
             request: The request to send.
+            expect_vid: If given, the vid (2nd token) that the terminal "R:" response
+                line must carry. The Host Command protocol has no request/response
+                correlation id, so this client normally just trusts that the next
+                "R:" line it reads is the answer to what it just sent. That trust
+                breaks if a *previous* command on this connection timed out or
+                errored out mid-read: its connection is left open, so that
+                abandoned command's real (but late) response can still arrive and
+                would otherwise be handed to whatever request reads next. When
+                expect_vid is set, any "R:" line for a different vid is treated
+                like an interleaved event message: logged and skipped, so we keep
+                waiting for the response that actually answers this request.
 
         Returns:
             The response lines received from the server.
@@ -145,11 +156,43 @@ class CommandClient:
             # Read all lines of the response
             response_lines: list[str] = []
             while True:
-                response_line = await conn.readuntil(b"\r\n", self._read_timeout)
+                try:
+                    response_line = await conn.readuntil(b"\r\n", self._read_timeout)
+                except BaseException as exc:
+                    # We're abandoning this read before reaching our own
+                    # terminating response line (timeout, cancellation, or a
+                    # connection error). The controller may still send - or may
+                    # have already sent - that response. Leaving the connection
+                    # open would let those leftover bytes silently become the
+                    # "answer" to whatever command reads next; unlike a mismatched
+                    # vid on a normal response, an R:ERROR line carries no vid at
+                    # all, so a stale error can't be caught by expect_vid either.
+                    # Close so the next command starts on a clean connection.
+                    logger.warning(
+                        "Abandoning read for %r (%s: %s); closing connection so "
+                        "its eventual response isn't misread as the answer to a "
+                        "later command",
+                        request,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    conn.close()
+                    raise
+
                 response_line = response_line.rstrip()
 
                 # Handle command errors
                 if response_line.startswith("R:ERROR"):
+                    # Log the raw line at receipt time, same as a normal response
+                    # would be (below) - raise_command_error() below unwinds the
+                    # stack before that log line runs, so without this an error
+                    # response's arrival time is otherwise lost. R:ERROR carries
+                    # no vid, so we can't attribute it to a request directly, but
+                    # its timestamp can still be matched against an "Abandoning
+                    # read" warning from a different in-flight command to confirm
+                    # or rule out a stale/misattributed response.
+                    logger.debug("Received response: %s", response_line)
+
                     # Parse a command error from a message.
                     match = re.match(r"R:ERROR:(\d+) (.+)", response_line)
                     if not match:
@@ -162,6 +205,20 @@ class CommandClient:
                 if response_line.startswith(("S:", "L:", "EL:")):
                     logger.debug("Ignoring event message: %s", response_line)
                     continue
+
+                # Discard a stale response left over from an earlier, abandoned
+                # request instead of misattributing it to this one.
+                if response_line.startswith("R:") and expect_vid is not None:
+                    tokens = Converter.tokenize(response_line)
+                    if len(tokens) >= 2 and tokens[1] != expect_vid:
+                        logger.warning(
+                            "Discarding stale response for vid %s while waiting "
+                            "for vid %s: %s",
+                            tokens[1],
+                            expect_vid,
+                            response_line,
+                        )
+                        continue
 
                 # Return the response once we see the response line
                 response_lines.append(response_line)

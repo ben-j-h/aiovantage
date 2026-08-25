@@ -262,7 +262,9 @@ class ButtonInterface(Interface):
             return changed
 
         try:
-            response = await self.command_client.raw_request(f"GETLED {self.vid}")
+            response = await self.command_client.raw_request(
+                f"GETLED {self.vid}", expect_vid=str(self.vid)
+            )
             _, _vid, _state, r1, g1, b1, r2, g2, b2, blink_str = Converter.tokenize(
                 response[-1]
             )

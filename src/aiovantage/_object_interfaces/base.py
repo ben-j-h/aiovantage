@@ -179,20 +179,32 @@ class Interface(metaclass=_InterfaceMeta):
             request += " " + " ".join(Converter.serialize(p) for p in params)
 
         # Send the request
-        response = await self.command_client.raw_request(request)
+        response = await self.command_client.raw_request(
+            request, expect_vid=str(self.vid)
+        )
 
         # Break the response into tokens
         return_line = response[-1]
         tokens = Converter.tokenize(return_line)
         if len(tokens) >= 4:
-            _command, _vid, result, _method, *args = tokens
-        elif len(tokens) == 3:
+            _command, vid, result, _method, *args = tokens
+        elif len(tokens) == 3 and tokens[0] in ("R:LOAD", "R:GETLOAD"):
             # Legacy firmware responds with R:LOAD <vid> <level> or R:GETLOAD <vid> <level>
             # instead of the standard R:INVOKE <vid> <result> <method> [args...]
-            _command, _vid, result = tokens
+            _command, vid, result = tokens
             args = []
         else:
             raise CommandError(f"Unexpected response format: {return_line!r}")
+
+        # Backstop: raw_request(expect_vid=...) already discards stray responses
+        # for other vids, so this should be unreachable in practice. Kept as a
+        # last line of defense so a mismatch fails loudly instead of silently
+        # deserializing another object's data as if it were ours.
+        if vid != str(self.vid):
+            raise CommandError(
+                f"Received response for vid {vid} while invoking {method} on "
+                f"vid {self.vid}: {return_line!r}"
+            )
 
         # Parse the response
         return self._parse_object_response(method, result, *args, as_type=as_type)
